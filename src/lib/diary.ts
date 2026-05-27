@@ -25,7 +25,8 @@ export function withDiaryEntry(
   const trimmed = content.trim()
 
   if (!trimmed) {
-    const { [dateKey]: _removed, ...rest } = diariesByDate
+    const rest = { ...diariesByDate }
+    delete rest[dateKey]
     return rest
   }
 

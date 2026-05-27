@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import {
   createContext,
   useCallback,
@@ -71,6 +72,7 @@ type TodoContextValue = {
 }
 
 const TodoContext = createContext<TodoContextValue | null>(null)
+const EMPTY_TASKS: TodoTask[] = []
 
 export function TodoProvider({ children }: { children: ReactNode }) {
   const [tasksByDate, setTasksByDate] = useState<TasksByDate>({})
@@ -89,7 +91,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   const skipDiarySaveRef = useRef(true)
 
   const todayKey = toDateKey(new Date())
-  const selectedTasks = tasksByDate[selectedDate] ?? []
+  const selectedTasks = tasksByDate[selectedDate] ?? EMPTY_TASKS
   const isReadOnlyDate = isPastDate(selectedDate)
   const batchTask = useMemo(
     () => selectedTasks.find((task) => task.id === batchTaskId) ?? null,
@@ -422,7 +424,8 @@ export function TodoProvider({ children }: { children: ReactNode }) {
           }
 
           if (!linkedRuleId) {
-            const { recurringRuleId: _removed, ...rest } = task
+            const rest: TodoTask = { ...task }
+            delete rest.recurringRuleId
             return rest
           }
 

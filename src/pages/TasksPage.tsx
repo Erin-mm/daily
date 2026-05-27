@@ -22,18 +22,7 @@ export function TasksPage() {
 
   return (
     <>
-      {isReadOnlyDate ? (
-        <div
-          className="task-summary"
-          aria-label={`${completedCount} / ${selectedTasks.length} 已完成`}
-        >
-          {selectedTasks.length > 0 && (
-            <div className="progress-ring" style={progressStyle}>
-              <span>{progressPercent}</span>
-            </div>
-          )}
-        </div>
-      ) : (
+      {!isReadOnlyDate && (
         <form className="task-form" onSubmit={handleAddTask}>
           <input
             type="text"
@@ -46,7 +35,7 @@ export function TasksPage() {
             aria-label={`${completedCount} / ${selectedTasks.length} 已完成`}
             style={progressStyle}
           >
-            <span>{progressPercent}</span>
+            <span>进度</span>
           </div>
         </form>
       )}

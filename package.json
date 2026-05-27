@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "build": "tsc -b && vite build",
-    "dist:mac": "npm run build && electron-builder --mac dir && hdiutil create -volname \"Daily\" -srcfolder \"release/mac-arm64/Daily.app\" -ov -format UDZO \"release/Daily-0.0.0-arm64.dmg\"",
+    "dist:mac": "npm run build && electron-builder --mac dmg",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -29,7 +29,21 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        "dir"
+        "dmg"
+      ]
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     }
   },
