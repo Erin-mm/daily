@@ -212,6 +212,17 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   }, [isLoaded, recurringRules, tasksByDate])
 
   useEffect(() => {
+    if (!isLoaded) {
+      return
+    }
+
+    const todayTasks = tasksByDate[todayKey] ?? EMPTY_TASKS
+    const pendingCount = todayTasks.filter((task) => !task.completed).length
+
+    void window.todoStore?.setDockBadge(pendingCount)
+  }, [isLoaded, tasksByDate, todayKey])
+
+  useEffect(() => {
     if (!isLoaded || recurringRules.length === 0) {
       return
     }

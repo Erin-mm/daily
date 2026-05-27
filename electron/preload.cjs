@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld('todoStore', {
   saveDiaries: (diariesByDate) => ipcRenderer.invoke('diary:save', diariesByDate),
   getAutoLaunch: () => ipcRenderer.invoke('settings:autoLaunch:get'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('settings:autoLaunch:set', enabled),
+  setDockBadge: (count) => ipcRenderer.invoke('dock:set-badge', count),
 });

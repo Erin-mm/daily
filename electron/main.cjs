@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
@@ -12,6 +12,10 @@ const userDataPath = app.getPath('userData');
 const legacyUserDataPath = path.join(app.getPath('appData'), legacyAppName);
 const storePath = path.join(userDataPath, 'tasks.json');
 const diaryStorePath = path.join(userDataPath, 'diaries.json');
+const iconPath = path.join(__dirname, '../build/icon.png');
+let mainWindow = null;
+let tray = null;
+let pendingBadgeCount = 0;
 
 async function copyLegacyStoreFile(filename) {
   const sourcePath = path.join(legacyUserDataPath, filename);
@@ -156,13 +160,124 @@ function setAutoLaunchEnabled(enabled) {
   return getAutoLaunchEnabled();
 }
 
+function updateBadgeIndicators(count) {
+  const nextCount = Number(count);
+  pendingBadgeCount = Number.isFinite(nextCount) ? Math.max(0, Math.floor(nextCount)) : 0;
+
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setBadge(pendingBadgeCount > 0 ? String(pendingBadgeCount) : '');
+  }
+
+  if (tray) {
+    tray.setTitle(pendingBadgeCount > 0 ? String(pendingBadgeCount) : '');
+    tray.setToolTip(
+      pendingBadgeCount > 0 ? `Daily - ${pendingBadgeCount} 个待办` : 'Daily',
+    );
+  }
+}
+
+function setDockIcon() {
+  if (process.platform === 'darwin' && app.dock && isDev) {
+    app.dock.setIcon(iconPath);
+  }
+}
+
+function showMainWindow() {
+  const window = createWindow();
+
+  if (window.isMinimized()) {
+    window.restore();
+  }
+
+  window.show();
+  window.focus();
+}
+
+function distanceToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSquared = dx * dx + dy * dy;
+  const t =
+    lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSquared));
+  const closestX = x1 + t * dx;
+  const closestY = y1 + t * dy;
+
+  return Math.hypot(px - closestX, py - closestY);
+}
+
+function createTrayIcon() {
+  const size = 36;
+  const scaleFactor = 2;
+  const buffer = Buffer.alloc(size * size * 4);
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const index = (y * size + x) * 4;
+      const centerX = x + 0.5;
+      const centerY = y + 0.5;
+      const boxLeft = 6;
+      const boxTop = 6;
+      const boxRight = 30;
+      const boxBottom = 30;
+      const radius = 5;
+      const cornerX = Math.max(boxLeft + radius, Math.min(centerX, boxRight - radius));
+      const cornerY = Math.max(boxTop + radius, Math.min(centerY, boxBottom - radius));
+      const isInRoundedBox =
+        centerX >= boxLeft &&
+        centerX <= boxRight &&
+        centerY >= boxTop &&
+        centerY <= boxBottom &&
+        Math.hypot(centerX - cornerX, centerY - cornerY) <= radius;
+      const isInCheck =
+        distanceToSegment(centerX, centerY, 11, 18.5, 16, 23.5) <= 2.8 ||
+        distanceToSegment(centerX, centerY, 16, 23.5, 26, 13.5) <= 2.8;
+
+      buffer[index] = 0;
+      buffer[index + 1] = 0;
+      buffer[index + 2] = 0;
+      buffer[index + 3] = isInRoundedBox && !isInCheck ? 255 : 0;
+    }
+  }
+
+  const trayIcon = nativeImage.createFromBitmap(buffer, {
+    width: size,
+    height: size,
+    scaleFactor,
+  });
+  trayIcon.setTemplateImage(true);
+
+  return trayIcon;
+}
+
+function createTray() {
+  if (process.platform !== 'darwin' || tray) {
+    return;
+  }
+
+  tray = new Tray(createTrayIcon());
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: '打开 Daily', click: showMainWindow },
+      { type: 'separator' },
+      { label: '退出', click: () => app.quit() },
+    ]),
+  );
+  tray.on('click', showMainWindow);
+  updateBadgeIndicators(pendingBadgeCount);
+}
+
 function createWindow() {
-  const window = new BrowserWindow({
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+
+  mainWindow = new BrowserWindow({
     width: 380,
     height: 480,
     minWidth: 300,
     minHeight: 360,
     title: 'Daily',
+    icon: iconPath,
     backgroundColor: '#f1f5f8',
     titleBarStyle: 'hiddenInset',
     webPreferences: {
@@ -173,10 +288,16 @@ function createWindow() {
   });
 
   if (isDev) {
-    window.loadURL(process.env.VITE_DEV_SERVER_URL);
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    window.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  return mainWindow;
 }
 
 ipcMain.handle('tasks:load', readTasks);
@@ -185,8 +306,11 @@ ipcMain.handle('diary:load', readDiaries);
 ipcMain.handle('diary:save', (_event, diariesByDate) => writeDiaries(diariesByDate));
 ipcMain.handle('settings:autoLaunch:get', getAutoLaunchEnabled);
 ipcMain.handle('settings:autoLaunch:set', (_event, enabled) => setAutoLaunchEnabled(enabled));
+ipcMain.handle('dock:set-badge', (_event, count) => updateBadgeIndicators(count));
 
 app.whenReady().then(() => {
+  setDockIcon();
+  createTray();
   createWindow();
 
   app.on('activate', () => {

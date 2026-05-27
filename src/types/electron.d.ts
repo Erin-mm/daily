@@ -31,6 +31,7 @@ declare global {
       saveDiaries: (diariesByDate: DiariesByDate) => Promise<DiariesByDate>
       getAutoLaunch: () => Promise<boolean>
       setAutoLaunch: (enabled: boolean) => Promise<boolean>
+      setDockBadge: (count: number) => Promise<void>
     }
   }
 }
