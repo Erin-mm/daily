@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" fill="none" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="166" y1="96" x2="858" y2="928" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f7fbf8" />
+      <stop offset=".55" stop-color="#edf5f0" />
+      <stop offset="1" stop-color="#dbece4" />
+    </linearGradient>
+    <linearGradient id="card" x1="330" y1="194" x2="694" y2="822" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity=".98" />
+      <stop offset=".5" stop-color="#f3f8f5" stop-opacity=".94" />
+      <stop offset="1" stop-color="#dfeee7" stop-opacity=".96" />
+    </linearGradient>
+    <linearGradient id="leaf" x1="300" y1="674" x2="724" y2="334" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#477f58" />
+      <stop offset=".48" stop-color="#65a476" />
+      <stop offset=".74" stop-color="#9bd2a3" />
+      <stop offset="1" stop-color="#d8eedc" />
+    </linearGradient>
+    <linearGradient id="leaf-shine" x1="370" y1="580" x2="690" y2="366" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e9f5ed" stop-opacity=".15" />
+      <stop offset=".42" stop-color="#f7fbf8" stop-opacity=".55" />
+      <stop offset="1" stop-color="#eef8ef" stop-opacity=".34" />
+    </linearGradient>
+    <radialGradient id="sun" cx="0" cy="0" r="1" gradientTransform="matrix(0 154 -154 0 666 282)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff1bd" />
+      <stop offset=".62" stop-color="#e6b422" />
+      <stop offset="1" stop-color="#e07a2f" />
+    </radialGradient>
+    <radialGradient id="aura" cx="0" cy="0" r="1" gradientTransform="matrix(0 390 -500 0 512 418)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#bfe4cc" stop-opacity=".7" />
+      <stop offset=".48" stop-color="#dcefe5" stop-opacity=".34" />
+      <stop offset="1" stop-color="#f7fbf8" stop-opacity="0" />
+    </radialGradient>
+    <filter id="outer-shadow" x="78" y="80" width="868" height="884" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="36" flood-color="#65778a" flood-opacity=".16" stdDeviation="42" />
+      <feDropShadow dx="0" dy="8" flood-color="#ffffff" flood-opacity=".72" stdDeviation="7" />
+    </filter>
+    <filter id="card-shadow" x="230" y="144" width="564" height="738" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="24" flood-color="#65778a" flood-opacity=".14" stdDeviation="28" />
+      <feDropShadow dx="0" dy="-4" flood-color="#ffffff" flood-opacity=".8" stdDeviation="8" />
+    </filter>
+    <filter id="soft-blur" x="80" y="70" width="864" height="884" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="42" />
+    </filter>
+  </defs>
+
+  <g filter="url(#outer-shadow)">
+    <rect x="112" y="104" width="800" height="816" rx="210" fill="url(#bg)" />
+    <rect x="114.5" y="106.5" width="795" height="811" rx="207.5" stroke="#fff" stroke-opacity=".75" stroke-width="5" />
+  </g>
+
+  <path fill="url(#aura)" d="M234 276c96-136 300-168 466-76 141 78 215 238 158 385-62 158-234 246-412 206-176-40-306-182-288-336 8-68 34-128 76-179Z" filter="url(#soft-blur)" />
+
+  <g filter="url(#card-shadow)">
+    <path fill="url(#card)" d="M342 178h340c70 0 126 56 126 126v326c0 120-98 218-218 218H434c-120 0-218-98-218-218V304c0-70 56-126 126-126Z" transform="rotate(-7 512 512)" />
+    <path stroke="#fff" stroke-opacity=".88" stroke-width="8" d="M342 182h340c68 0 122 54 122 122v326c0 118-96 214-214 214H434c-118 0-214-96-214-214V304c0-68 54-122 122-122Z" transform="rotate(-7 512 512)" />
+  </g>
+
+  <circle cx="666" cy="282" r="72" fill="url(#sun)" opacity=".92" />
+  <circle cx="644" cy="255" r="20" fill="#fff6d7" opacity=".48" />
+
+  <g transform="rotate(-7 512 512)">
+    <path stroke="#cbdcd4" stroke-linecap="round" stroke-width="34" d="M350 332h204M350 428h156" opacity=".74" />
+    <path stroke="#e8f2ed" stroke-linecap="round" stroke-width="16" d="M350 332h204M350 428h156" opacity=".75" />
+  </g>
+
+  <path stroke="url(#leaf)" stroke-linecap="round" stroke-linejoin="round" stroke-width="94" d="M304 608c72 98 168 138 252 34 56-70 84-150 160-198" />
+  <path stroke="url(#leaf-shine)" stroke-linecap="round" stroke-linejoin="round" stroke-width="34" d="M344 598c64 58 132 70 200-14 44-54 78-110 134-148" />
+</svg>

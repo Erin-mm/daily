@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="card" x1="10" y1="6" x2="38" y2="43" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fbfdfa" />
+      <stop offset="1" stop-color="#e5f1eb" />
+    </linearGradient>
+    <linearGradient id="leaf" x1="13" y1="34" x2="37" y2="13" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4d9160" />
+      <stop offset=".54" stop-color="#65a476" />
+      <stop offset="1" stop-color="#d8eedc" />
+    </linearGradient>
+    <radialGradient id="sun" cx="0" cy="0" r="1" gradientTransform="matrix(0 9 -9 0 34 14)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffe7a6" />
+      <stop offset=".72" stop-color="#e6b422" />
+      <stop offset="1" stop-color="#e07a2f" />
+    </radialGradient>
+    <filter id="shadow" x="4" y="2" width="40" height="45" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="3" flood-color="#65778a" flood-opacity=".16" stdDeviation="3" />
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <path fill="url(#card)" d="M14.5 5.5h19A6.5 6.5 0 0 1 40 12v22a8.5 8.5 0 0 1-8.5 8.5h-15A8.5 8.5 0 0 1 8 34V12a6.5 6.5 0 0 1 6.5-6.5Z" />
+    <path stroke="#fff" stroke-opacity=".8" d="M14.5 6h19a6 6 0 0 1 6 6v22a8 8 0 0 1-8 8h-15a8 8 0 0 1-8-8V12a6 6 0 0 1 6-6Z" />
+  </g>
+  <circle cx="34" cy="14" r="4.2" fill="url(#sun)" />
+  <path stroke="#c8d8d0" stroke-linecap="round" stroke-width="2.2" d="M15 16.5h11M15 22.5h8" />
+  <path stroke="url(#leaf)" stroke-linecap="round" stroke-linejoin="round" stroke-width="5.2" d="M14.2 29.2c4 5 9.4 6.5 14.2.2 2.6-3.4 4.9-7.5 7.2-10" />
+</svg>
