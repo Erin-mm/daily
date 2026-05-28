@@ -8,7 +8,7 @@ export function DiaryPage() {
     diaryError,
   } = useTodo()
 
-  const placeholder ='记小盈'
+  const placeholder = '记小盈'
 
   return (
     <section className="diary-panel" aria-label="日记">

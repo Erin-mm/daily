@@ -13,6 +13,10 @@ const legacyUserDataPath = path.join(app.getPath('appData'), legacyAppName);
 const storePath = path.join(userDataPath, 'tasks.json');
 const diaryStorePath = path.join(userDataPath, 'diaries.json');
 const iconPath = path.join(__dirname, '../build/icon.png');
+const defaultFeatureSettings = {
+  calendarEnabled: false,
+  diaryEnabled: false,
+};
 let mainWindow = null;
 let tray = null;
 let pendingBadgeCount = 0;
@@ -63,6 +67,7 @@ function normalizeStore(raw) {
     return {
       tasksByDate: raw.tasksByDate ?? {},
       recurringRules: Array.isArray(raw.recurringRules) ? raw.recurringRules : [],
+      featureSettings: normalizeFeatureSettings(raw.featureSettings),
     };
   }
 
@@ -70,12 +75,29 @@ function normalizeStore(raw) {
     return {
       tasksByDate: raw,
       recurringRules: [],
+      featureSettings: defaultFeatureSettings,
     };
   }
 
   return {
     tasksByDate: {},
     recurringRules: [],
+    featureSettings: defaultFeatureSettings,
+  };
+}
+
+function normalizeFeatureSettings(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return defaultFeatureSettings;
+  }
+
+  return {
+    calendarEnabled:
+      typeof raw.calendarEnabled === 'boolean'
+        ? raw.calendarEnabled
+        : defaultFeatureSettings.calendarEnabled,
+    diaryEnabled:
+      typeof raw.diaryEnabled === 'boolean' ? raw.diaryEnabled : defaultFeatureSettings.diaryEnabled,
   };
 }
 

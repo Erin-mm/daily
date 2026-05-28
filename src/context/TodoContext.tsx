@@ -19,12 +19,31 @@ import {
   getRecurringRuleForTask,
   RECURRING_SYNC_INTERVAL_MS,
 } from '../lib/recurring'
-import { createTask, normalizeAppData } from '../lib/tasks'
-import type { AppData, DiariesByDate, RecurringRule, TasksByDate, TodoTask } from '../types/electron'
+import { createTask, DEFAULT_FEATURE_SETTINGS, normalizeAppData } from '../lib/tasks'
+import type {
+  AppData,
+  DiariesByDate,
+  FeatureSettings,
+  RecurringRule,
+  TasksByDate,
+  TodoTask,
+} from '../types/electron'
 
 const DIARY_SAVE_DEBOUNCE_MS = 350
 
-export type AppView = 'tasks' | 'calendar' | 'diary' | 'settings' | 'batch'
+export type AppView = 'tasks' | 'calendar' | 'diary' | 'diaryList' | 'settings' | 'batch'
+
+export type DiaryListEntry = {
+  dateKey: string
+  content: string
+}
+
+type NavigationSnapshot = {
+  currentView: AppView
+  selectedDate: string
+  calendarMonth: Date
+  batchTaskId: string | null
+}
 
 type TodoContextValue = {
   currentView: AppView
@@ -40,25 +59,26 @@ type TodoContextValue = {
   progressPercent: number
   monthDays: (Date | null)[]
   calendarMonth: Date
-  isOnToday: boolean
-  isCalendarOnCurrentMonth: boolean
-  showTodayShortcut: boolean
   tasksByDate: TasksByDate
   recurringRules: RecurringRule[]
   newTask: string
   autoLaunchEnabled: boolean
+  featureSettings: FeatureSettings
   setNewTask: (value: string) => void
   goToTasks: () => void
   goToCalendar: () => void
   goToDiary: () => void
   goToSettings: () => void
   selectedDiary: string
+  diaryEntries: DiaryListEntry[]
   updateDiary: (content: string) => void
-  hasTodayDiary: boolean
+  hasSelectedDiary: boolean
   isDiaryReadOnly: boolean
   diaryError: string
   goBack: () => void
   goToToday: () => void
+  openDiaryList: () => void
+  openDiaryDate: (dateKey: string) => void
   openBatchView: (taskId: string) => void
   selectDate: (date: Date) => void
   moveMonth: (step: number) => void
@@ -68,6 +88,7 @@ type TodoContextValue = {
   deleteTask: (taskId: string) => void
   toggleBatchWeekday: (weekday: number) => void
   handleAutoLaunchChange: (enabled: boolean) => void
+  handleFeatureSettingChange: (setting: keyof FeatureSettings, enabled: boolean) => void
   hasBatchSchedule: (task: TodoTask) => boolean
 }
 
@@ -83,11 +104,13 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   const [currentView, setCurrentView] = useState<AppView>('tasks')
   const [batchTaskId, setBatchTaskId] = useState<string | null>(null)
   const [autoLaunchEnabled, setAutoLaunchEnabled] = useState(false)
+  const [featureSettings, setFeatureSettings] = useState<FeatureSettings>(DEFAULT_FEATURE_SETTINGS)
   const [diariesByDate, setDiariesByDate] = useState<DiariesByDate>({})
   const [isLoaded, setIsLoaded] = useState(false)
   const [isDiaryLoaded, setIsDiaryLoaded] = useState(false)
   const [error, setError] = useState('')
   const [diaryError, setDiaryError] = useState('')
+  const navigationHistoryRef = useRef<NavigationSnapshot[]>([])
   const skipDiarySaveRef = useRef(true)
 
   const todayKey = toDateKey(new Date())
@@ -102,7 +125,15 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     [batchTask, recurringRules],
   )
   const selectedDiary = diariesByDate[selectedDate] ?? ''
-  const hasTodayDiary = hasDiaryContent(diariesByDate[todayKey])
+  const diaryEntries = useMemo<DiaryListEntry[]>(
+    () =>
+      Object.entries(diariesByDate)
+        .filter(([, content]) => hasDiaryContent(content))
+        .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
+        .map(([dateKey, content]) => ({ dateKey, content })),
+    [diariesByDate],
+  )
+  const hasSelectedDiary = hasDiaryContent(diariesByDate[selectedDate])
   const isDiaryReadOnly = selectedDate > todayKey
   const headerTitle = useMemo(() => {
     if (currentView === 'settings') {
@@ -121,6 +152,10 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       return formatSelectedDateTitle(selectedDate, todayKey)
     }
 
+    if (currentView === 'diaryList') {
+      return '日记列表'
+    }
+
     if (currentView === 'batch') {
       return batchTask?.text ?? '批量重复'
     }
@@ -132,13 +167,6 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     ? Math.round((completedCount / selectedTasks.length) * 100)
     : 0
   const monthDays = useMemo(() => getMonthDays(calendarMonth), [calendarMonth])
-  const isOnToday = selectedDate === todayKey
-  const isCalendarOnCurrentMonth =
-    calendarMonth.getFullYear() === new Date().getFullYear() &&
-    calendarMonth.getMonth() === new Date().getMonth()
-  const showTodayShortcut =
-    currentView !== 'settings' &&
-    (!isOnToday || (currentView === 'calendar' && !isCalendarOnCurrentMonth))
 
   useEffect(() => {
     let isMounted = true
@@ -151,10 +179,15 @@ export function TodoProvider({ children }: { children: ReactNode }) {
         ])
 
         if (isMounted && storedTasks) {
-          const { tasksByDate: loadedTasks, recurringRules: loadedRules } =
+          const {
+            tasksByDate: loadedTasks,
+            recurringRules: loadedRules,
+            featureSettings: loadedFeatureSettings,
+          } =
             normalizeAppData(storedTasks)
 
           setRecurringRules(loadedRules)
+          setFeatureSettings(loadedFeatureSettings)
           setTasksByDate(
             applyRecurringRulesForDate(loadedTasks, loadedRules, toDateKey(new Date())),
           )
@@ -199,7 +232,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
 
     async function saveTasks() {
       try {
-        const payload: AppData = { tasksByDate, recurringRules }
+        const payload: AppData = { tasksByDate, recurringRules, featureSettings }
         await window.todoStore?.saveTasks(payload)
         setError('')
       } catch (saveError) {
@@ -209,7 +242,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     }
 
     saveTasks()
-  }, [isLoaded, recurringRules, tasksByDate])
+  }, [featureSettings, isLoaded, recurringRules, tasksByDate])
 
   useEffect(() => {
     if (!isLoaded) {
@@ -286,17 +319,45 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     [selectedDate],
   )
 
+  const getNavigationSnapshot = useCallback(
+    (): NavigationSnapshot => ({
+      currentView,
+      selectedDate,
+      calendarMonth,
+      batchTaskId,
+    }),
+    [batchTaskId, calendarMonth, currentView, selectedDate],
+  )
+
+  const pushNavigationSnapshot = useCallback(() => {
+    navigationHistoryRef.current.push(getNavigationSnapshot())
+  }, [getNavigationSnapshot])
+
   const goToTasks = useCallback(() => {
+    pushNavigationSnapshot()
     setBatchTaskId(null)
     setCurrentView('tasks')
-  }, [])
+  }, [pushNavigationSnapshot])
 
-  const goToCalendar = useCallback(() => setCurrentView('calendar'), [])
-  const goToDiary = useCallback(() => setCurrentView('diary'), [])
-  const goToSettings = useCallback(() => setCurrentView('settings'), [])
+  const goToCalendar = useCallback(() => {
+    if (featureSettings.calendarEnabled) {
+      pushNavigationSnapshot()
+      setCurrentView('calendar')
+    }
+  }, [featureSettings.calendarEnabled, pushNavigationSnapshot])
+  const goToDiary = useCallback(() => {
+    if (featureSettings.diaryEnabled) {
+      pushNavigationSnapshot()
+      setCurrentView('diary')
+    }
+  }, [featureSettings.diaryEnabled, pushNavigationSnapshot])
+  const goToSettings = useCallback(() => {
+    pushNavigationSnapshot()
+    setCurrentView('settings')
+  }, [pushNavigationSnapshot])
 
   const goBack = useCallback(() => {
-    if (currentView === 'diary' && isDiaryLoaded) {
+    if ((currentView === 'diary' || currentView === 'diaryList') && isDiaryLoaded) {
       void saveDiaries(diariesByDate)
         .then(() => setDiaryError(''))
         .catch((saveError) => {
@@ -305,32 +366,60 @@ export function TodoProvider({ children }: { children: ReactNode }) {
         })
     }
 
-    if (currentView === 'batch') {
-      setBatchTaskId(null)
-      setCurrentView('tasks')
+    const previousState = navigationHistoryRef.current.pop()
+
+    if (previousState) {
+      setSelectedDate(previousState.selectedDate)
+      setCalendarMonth(previousState.calendarMonth)
+      setBatchTaskId(previousState.batchTaskId)
+      setCurrentView(previousState.currentView)
       return
     }
 
+    setBatchTaskId(null)
     setCurrentView('tasks')
   }, [currentView, diariesByDate, isDiaryLoaded])
 
   const openBatchView = useCallback((taskId: string) => {
+    pushNavigationSnapshot()
     setBatchTaskId(taskId)
     setCurrentView('batch')
-  }, [])
+  }, [pushNavigationSnapshot])
 
   const goToToday = useCallback(() => {
     const today = new Date()
+    navigationHistoryRef.current = []
     setSelectedDate(todayKey)
     setCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1))
-    setCurrentView((view) => (view === 'diary' ? 'diary' : 'tasks'))
+    setBatchTaskId(null)
+    setCurrentView('tasks')
   }, [todayKey])
 
+  const openDiaryList = useCallback(() => {
+    if (featureSettings.diaryEnabled) {
+      pushNavigationSnapshot()
+      setCurrentView('diaryList')
+    }
+  }, [featureSettings.diaryEnabled, pushNavigationSnapshot])
+
+  const openDiaryDate = useCallback((dateKey: string) => {
+    const date = fromDateKey(dateKey)
+    if (featureSettings.diaryEnabled) {
+      pushNavigationSnapshot()
+    }
+    setSelectedDate(dateKey)
+    setCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1))
+    if (featureSettings.diaryEnabled) {
+      setCurrentView('diary')
+    }
+  }, [featureSettings.diaryEnabled, pushNavigationSnapshot])
+
   const selectDate = useCallback((date: Date) => {
+    pushNavigationSnapshot()
     setSelectedDate(toDateKey(date))
     setCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1))
     setCurrentView('tasks')
-  }, [])
+  }, [pushNavigationSnapshot])
 
   const moveMonth = useCallback((step: number) => {
     setCalendarMonth(
@@ -479,6 +568,28 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const handleFeatureSettingChange = useCallback(
+    (setting: keyof FeatureSettings, enabled: boolean) => {
+      setFeatureSettings((settings) => ({
+        ...settings,
+        [setting]: enabled,
+      }))
+
+      if (!enabled && setting === 'calendarEnabled' && currentView === 'calendar') {
+        setCurrentView('tasks')
+      }
+
+      if (
+        !enabled &&
+        setting === 'diaryEnabled' &&
+        (currentView === 'diary' || currentView === 'diaryList')
+      ) {
+        setCurrentView('tasks')
+      }
+    },
+    [currentView],
+  )
+
   const hasBatchScheduleForTask = useCallback(
     (task: TodoTask) => {
       const rule = getRecurringRuleForTask(task, recurringRules)
@@ -502,13 +613,11 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       progressPercent,
       monthDays,
       calendarMonth,
-      isOnToday,
-      isCalendarOnCurrentMonth,
-      showTodayShortcut,
       tasksByDate,
       recurringRules,
       newTask,
       autoLaunchEnabled,
+      featureSettings,
       setNewTask,
       goToTasks,
       goToCalendar,
@@ -517,10 +626,13 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       goBack,
       goToToday,
       selectedDiary,
+      diaryEntries,
       updateDiary,
-      hasTodayDiary,
+      hasSelectedDiary,
       isDiaryReadOnly,
       diaryError,
+      openDiaryList,
+      openDiaryDate,
       openBatchView,
       selectDate,
       moveMonth,
@@ -530,6 +642,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       deleteTask,
       toggleBatchWeekday,
       handleAutoLaunchChange,
+      handleFeatureSettingChange,
       hasBatchSchedule: hasBatchScheduleForTask,
     }),
     [
@@ -539,7 +652,9 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       calendarMonth,
       completedCount,
       currentView,
+      diaryEntries,
       error,
+      featureSettings,
       getCalendarDayIndicator,
       goBack,
       diaryError,
@@ -550,23 +665,23 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       goToToday,
       handleAddTask,
       handleAutoLaunchChange,
+      handleFeatureSettingChange,
       hasBatchScheduleForTask,
       headerTitle,
-      isCalendarOnCurrentMonth,
-      isOnToday,
       isReadOnlyDate,
       monthDays,
       moveMonth,
       newTask,
+      openDiaryList,
+      openDiaryDate,
       openBatchView,
       progressPercent,
       recurringRules,
       selectDate,
       selectedDate,
       selectedTasks,
-      showTodayShortcut,
       tasksByDate,
-      hasTodayDiary,
+      hasSelectedDiary,
       isDiaryReadOnly,
       selectedDiary,
       todayKey,

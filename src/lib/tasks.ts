@@ -1,4 +1,9 @@
-import type { AppData, TasksByDate, TodoTask } from '../types/electron'
+import type { AppData, FeatureSettings, TasksByDate, TodoTask } from '../types/electron'
+
+export const DEFAULT_FEATURE_SETTINGS: FeatureSettings = {
+  calendarEnabled: false,
+  diaryEnabled: false,
+}
 
 export function createTask(text: string, recurringRuleId?: string): TodoTask {
   return {
@@ -16,6 +21,7 @@ export function normalizeAppData(raw: unknown): AppData {
     return {
       tasksByDate: data.tasksByDate ?? {},
       recurringRules: Array.isArray(data.recurringRules) ? data.recurringRules : [],
+      featureSettings: normalizeFeatureSettings(data.featureSettings),
     }
   }
 
@@ -23,11 +29,32 @@ export function normalizeAppData(raw: unknown): AppData {
     return {
       tasksByDate: raw as TasksByDate,
       recurringRules: [],
+      featureSettings: DEFAULT_FEATURE_SETTINGS,
     }
   }
 
   return {
     tasksByDate: {},
     recurringRules: [],
+    featureSettings: DEFAULT_FEATURE_SETTINGS,
+  }
+}
+
+function normalizeFeatureSettings(raw: unknown): FeatureSettings {
+  if (!raw || typeof raw !== 'object') {
+    return DEFAULT_FEATURE_SETTINGS
+  }
+
+  const settings = raw as Partial<FeatureSettings>
+
+  return {
+    calendarEnabled:
+      typeof settings.calendarEnabled === 'boolean'
+        ? settings.calendarEnabled
+        : DEFAULT_FEATURE_SETTINGS.calendarEnabled,
+    diaryEnabled:
+      typeof settings.diaryEnabled === 'boolean'
+        ? settings.diaryEnabled
+        : DEFAULT_FEATURE_SETTINGS.diaryEnabled,
   }
 }

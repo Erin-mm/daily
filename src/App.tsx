@@ -3,20 +3,22 @@ import { AppHeader } from './components/AppHeader'
 import { TodoProvider, useTodo } from './context/TodoContext'
 import { BatchPage } from './pages/BatchPage'
 import { CalendarPage } from './pages/CalendarPage'
+import { DiaryListPage } from './pages/DiaryListPage'
 import { DiaryPage } from './pages/DiaryPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TasksPage } from './pages/TasksPage'
 
 function AppContent() {
-  const { currentView } = useTodo()
+  const { currentView, featureSettings } = useTodo()
 
   return (
     <main className="app-shell">
       <section className="todo-card" aria-label="Daily">
         <AppHeader />
         <div className="card-body">
-          {currentView === 'calendar' && <CalendarPage />}
-          {currentView === 'diary' && <DiaryPage />}
+          {currentView === 'calendar' && featureSettings.calendarEnabled && <CalendarPage />}
+          {currentView === 'diary' && featureSettings.diaryEnabled && <DiaryPage />}
+          {currentView === 'diaryList' && featureSettings.diaryEnabled && <DiaryListPage />}
           {currentView === 'batch' && <BatchPage />}
           {currentView === 'settings' && <SettingsPage />}
           {currentView === 'tasks' && <TasksPage />}

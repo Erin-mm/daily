@@ -15,9 +15,15 @@ export type RecurringRule = {
   weekdays: number[]
 }
 
+export type FeatureSettings = {
+  calendarEnabled: boolean
+  diaryEnabled: boolean
+}
+
 export type AppData = {
   tasksByDate: TasksByDate
   recurringRules: RecurringRule[]
+  featureSettings: FeatureSettings
 }
 
 export type DiariesByDate = Record<string, string>
