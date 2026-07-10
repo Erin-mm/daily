@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, Notification } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 
 const appName = 'daily';
 const legacyAppName = 'neumorphic-todo';
@@ -20,6 +21,8 @@ const defaultFeatureSettings = {
 let mainWindow = null;
 let tray = null;
 let pendingBadgeCount = 0;
+let reminderTimer = null;
+const deliveredReminderKeys = new Set();
 
 async function copyLegacyStoreFile(filename) {
   const sourcePath = path.join(legacyUserDataPath, filename);
@@ -66,7 +69,7 @@ function normalizeStore(raw) {
   if (raw && typeof raw === 'object' && raw.tasksByDate) {
     return {
       tasksByDate: raw.tasksByDate ?? {},
-      recurringRules: Array.isArray(raw.recurringRules) ? raw.recurringRules : [],
+      recurringRules: normalizeRecurringRules(raw.recurringRules),
       featureSettings: normalizeFeatureSettings(raw.featureSettings),
     };
   }
@@ -84,6 +87,32 @@ function normalizeStore(raw) {
     recurringRules: [],
     featureSettings: defaultFeatureSettings,
   };
+}
+
+function normalizeRecurringRules(raw) {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter(
+      (rule) =>
+        rule &&
+        typeof rule === 'object' &&
+        typeof rule.id === 'string' &&
+        typeof rule.taskId === 'string' &&
+        typeof rule.text === 'string' &&
+        Array.isArray(rule.weekdays),
+    )
+    .map((rule) => ({
+      id: rule.id,
+      taskId: rule.taskId,
+      text: rule.text,
+      weekdays: rule.weekdays.filter((weekday) => Number.isInteger(weekday) && weekday >= 0 && weekday <= 6),
+      ...(typeof rule.reminderTime === 'string' && /^\d{2}:\d{2}$/.test(rule.reminderTime)
+        ? { reminderTime: rule.reminderTime }
+        : {}),
+    }));
 }
 
 function normalizeFeatureSettings(raw) {
@@ -118,12 +147,29 @@ async function readTasks() {
 
 async function writeTasks(data) {
   const normalized = normalizeStore(data);
+  normalized.tasksByDate = pruneExpiredRecurringTasks(normalized.tasksByDate);
   await fs.mkdir(path.dirname(storePath), { recursive: true });
   await fs.writeFile(storePath, JSON.stringify(normalized, null, 2), 'utf8');
   return normalized;
 }
 
-function normalizeDiaries(raw) {
+function pruneExpiredRecurringTasks(tasksByDate) {
+  const todayKey = toDateKey(new Date());
+  return Object.fromEntries(
+    Object.entries(tasksByDate)
+      .map(([dateKey, tasks]) => [
+        dateKey,
+        dateKey < todayKey ? tasks.filter((task) => !task.recurringRuleId) : tasks,
+      ])
+      .filter(([, tasks]) => tasks.length > 0),
+  );
+}
+
+function normalizeDiaryEntries(raw) {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && raw.entries) {
+    return normalizeDiaryEntries(raw.entries);
+  }
+
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return {};
   }
@@ -134,6 +180,40 @@ function normalizeDiaries(raw) {
         /^\d{4}-\d{2}-\d{2}$/.test(dateKey) && typeof content === 'string',
     ),
   );
+}
+
+function normalizeTimestampMap(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      ([dateKey, timestamp]) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(dateKey) &&
+        typeof timestamp === 'string' &&
+        !Number.isNaN(Date.parse(timestamp)),
+    ),
+  );
+}
+
+function normalizeDiarySyncData(raw) {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && raw.entries) {
+    return {
+      entries: normalizeDiaryEntries(raw.entries),
+      updatedAtByDate: normalizeTimestampMap(raw.updatedAtByDate),
+      deletedAtByDate: normalizeTimestampMap(raw.deletedAtByDate),
+    };
+  }
+
+  const entries = normalizeDiaryEntries(raw);
+  const now = new Date().toISOString();
+
+  return {
+    entries,
+    updatedAtByDate: Object.fromEntries(Object.keys(entries).map((dateKey) => [dateKey, now])),
+    deletedAtByDate: {},
+  };
 }
 
 async function ensureDiaryStore() {
@@ -153,17 +233,17 @@ async function readDiaries() {
   try {
     const raw = await fs.readFile(diaryStorePath, 'utf8');
     if (!raw.trim()) {
-      return {};
+      return normalizeDiarySyncData(null);
     }
-    return normalizeDiaries(JSON.parse(raw));
+    return normalizeDiarySyncData(JSON.parse(raw));
   } catch (error) {
     console.error('Failed to read diary store:', error);
-    return {};
+    return normalizeDiarySyncData(null);
   }
 }
 
 async function writeDiaries(diariesByDate) {
-  const normalized = normalizeDiaries(diariesByDate);
+  const normalized = normalizeDiarySyncData(diariesByDate);
   await fs.mkdir(path.dirname(diaryStorePath), { recursive: true });
   await fs.writeFile(diaryStorePath, JSON.stringify(normalized, null, 2), 'utf8');
   return normalized;
@@ -176,10 +256,132 @@ function getAutoLaunchEnabled() {
 function setAutoLaunchEnabled(enabled) {
   app.setLoginItemSettings({
     openAtLogin: Boolean(enabled),
-    openAsHidden: false,
+    openAsHidden: true,
   });
 
   return getAutoLaunchEnabled();
+}
+
+function toDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function toTimeKey(date) {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  return `${hours}:${minutes}`;
+}
+
+function createTask(text, recurringRuleId) {
+  return {
+    id: randomUUID(),
+    text,
+    completed: false,
+    createdAt: new Date().toISOString(),
+    ...(recurringRuleId ? { recurringRuleId } : {}),
+  };
+}
+
+function applyRecurringRulesForDate(tasksByDate, rules, date) {
+  const dateKey = toDateKey(date);
+  const weekday = date.getDay();
+  const activeRules = rules.filter((rule) => rule.weekdays.includes(weekday));
+
+  if (activeRules.length === 0) {
+    return { tasksByDate, changed: false };
+  }
+
+  const dayTasks = [...(tasksByDate[dateKey] ?? [])];
+  let changed = false;
+
+  for (const rule of activeRules) {
+    if (dayTasks.some((task) => task.recurringRuleId === rule.id)) {
+      continue;
+    }
+
+    dayTasks.unshift(createTask(rule.text, rule.id));
+    changed = true;
+  }
+
+  if (!changed) {
+    return { tasksByDate, changed: false };
+  }
+
+  return {
+    tasksByDate: {
+      ...tasksByDate,
+      [dateKey]: dayTasks,
+    },
+    changed: true,
+  };
+}
+
+function notifyDueRules(tasksByDate, rules, date) {
+  if (!Notification.isSupported()) {
+    return;
+  }
+
+  const dateKey = toDateKey(date);
+  const timeKey = toTimeKey(date);
+  const weekday = date.getDay();
+  const dayTasks = tasksByDate[dateKey] ?? [];
+
+  for (const rule of rules) {
+    if (!rule.reminderTime || rule.reminderTime !== timeKey || !rule.weekdays.includes(weekday)) {
+      continue;
+    }
+
+    const reminderKey = `${dateKey}:${rule.id}:${timeKey}`;
+    if (deliveredReminderKeys.has(reminderKey)) {
+      continue;
+    }
+
+    const task = dayTasks.find((item) => item.recurringRuleId === rule.id);
+    if (task?.completed) {
+      deliveredReminderKeys.add(reminderKey);
+      continue;
+    }
+
+    deliveredReminderKeys.add(reminderKey);
+    new Notification({
+      title: 'Daily 提醒',
+      body: rule.text,
+      silent: false,
+    }).show();
+  }
+}
+
+async function syncRecurringTasksAndReminders() {
+  try {
+    const now = new Date();
+    const store = await readTasks();
+    const { tasksByDate, changed } = applyRecurringRulesForDate(
+      store.tasksByDate,
+      store.recurringRules,
+      now,
+    );
+    const nextStore = changed ? await writeTasks({ ...store, tasksByDate }) : { ...store, tasksByDate };
+    const todayTasks = nextStore.tasksByDate[toDateKey(now)] ?? [];
+
+    notifyDueRules(nextStore.tasksByDate, nextStore.recurringRules, now);
+    updateBadgeIndicators(todayTasks.filter((task) => !task.completed).length);
+  } catch (error) {
+    console.error('Failed to sync recurring reminders:', error);
+  }
+}
+
+function startReminderScheduler() {
+  if (reminderTimer) {
+    return;
+  }
+
+  void syncRecurringTasksAndReminders();
+  reminderTimer = setInterval(syncRecurringTasksAndReminders, 60 * 1000);
 }
 
 function updateBadgeIndicators(count) {
@@ -288,7 +490,7 @@ function createTray() {
   updateBadgeIndicators(pendingBadgeCount);
 }
 
-function createWindow() {
+function createWindow(shouldShow = true) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     return mainWindow;
   }
@@ -302,6 +504,7 @@ function createWindow() {
     icon: iconPath,
     backgroundColor: '#f1f5f8',
     titleBarStyle: 'hiddenInset',
+    show: shouldShow,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -333,7 +536,9 @@ ipcMain.handle('dock:set-badge', (_event, count) => updateBadgeIndicators(count)
 app.whenReady().then(() => {
   setDockIcon();
   createTray();
-  createWindow();
+  startReminderScheduler();
+
+  createWindow(!app.getLoginItemSettings().wasOpenedAsHidden);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

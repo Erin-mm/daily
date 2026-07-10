@@ -1,3 +1,9 @@
+import { normalizeDiarySyncData } from './diary'
+import type { AppData, DiariesByDate, DiarySyncData } from '../types/electron'
+
+const TASKS_STORAGE_KEY = 'daily:tasks'
+const DIARIES_STORAGE_KEY = 'daily:diaries'
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message
@@ -21,18 +27,55 @@ export function formatStoreError(error: unknown, action: 'load' | 'save', kind: 
   return `${label}保存失败：${message}`
 }
 
-export async function saveDiaries(diariesByDate: Record<string, string>) {
-  if (!window.todoStore?.saveDiaries) {
-    throw new Error('No handler registered for diary:save')
+function readLocalStorageJson<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') {
+    return fallback
   }
 
-  return window.todoStore.saveDiaries(diariesByDate)
+  const raw = window.localStorage.getItem(key)
+  if (!raw) {
+    return fallback
+  }
+
+  return JSON.parse(raw) as T
+}
+
+function writeLocalStorageJson(key: string, value: unknown) {
+  window.localStorage.setItem(key, JSON.stringify(value))
+}
+
+export async function loadTasks() {
+  if (window.todoStore?.loadTasks) {
+    return window.todoStore.loadTasks()
+  }
+
+  return readLocalStorageJson<Partial<AppData>>(TASKS_STORAGE_KEY, {})
+}
+
+export async function saveTasks(data: AppData) {
+  if (window.todoStore?.saveTasks) {
+    return window.todoStore.saveTasks(data)
+  }
+
+  writeLocalStorageJson(TASKS_STORAGE_KEY, data)
+  return data
+}
+
+export async function saveDiaries(diariesByDate: DiarySyncData | DiariesByDate) {
+  const normalized = normalizeDiarySyncData(diariesByDate)
+
+  if (window.todoStore?.saveDiaries) {
+    return window.todoStore.saveDiaries(normalized)
+  }
+
+  writeLocalStorageJson(DIARIES_STORAGE_KEY, normalized)
+  return normalized
 }
 
 export async function loadDiaries() {
-  if (!window.todoStore?.loadDiaries) {
-    throw new Error('No handler registered for diary:load')
+  if (window.todoStore?.loadDiaries) {
+    return window.todoStore.loadDiaries()
   }
 
-  return window.todoStore.loadDiaries()
+  return normalizeDiarySyncData(readLocalStorageJson<unknown>(DIARIES_STORAGE_KEY, {}))
 }

@@ -13,6 +13,7 @@ export const WEEKDAY_OPTIONS = [
 ] as const
 
 export const RECURRING_SYNC_INTERVAL_MS = 60_000
+export const DEFAULT_REMINDER_TIME = '09:00'
 
 export function applyRecurringRulesForDate(
   tasksByDate: TasksByDate,

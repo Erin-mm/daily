@@ -1,0 +1,18 @@
+{
+  "name": "Daily",
+  "short_name": "Daily",
+  "description": "A local-first daily tasks and diary app.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f1f5f8",
+  "theme_color": "#f1f5f8",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

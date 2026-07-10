@@ -1,4 +1,5 @@
 import type { AppData, FeatureSettings, TasksByDate, TodoTask } from '../types/electron'
+import { toDateKey } from './date'
 
 export const DEFAULT_FEATURE_SETTINGS: FeatureSettings = {
   calendarEnabled: false,
@@ -6,11 +7,14 @@ export const DEFAULT_FEATURE_SETTINGS: FeatureSettings = {
 }
 
 export function createTask(text: string, recurringRuleId?: string): TodoTask {
+  const now = new Date().toISOString()
+
   return {
     id: crypto.randomUUID(),
     text,
     completed: false,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     ...(recurringRuleId ? { recurringRuleId } : {}),
   }
 }
@@ -37,6 +41,27 @@ export function normalizeAppData(raw: unknown): AppData {
     tasksByDate: {},
     recurringRules: [],
     featureSettings: DEFAULT_FEATURE_SETTINGS,
+  }
+}
+
+export function pruneExpiredRecurringTasks(
+  tasksByDate: TasksByDate,
+  todayKey = toDateKey(new Date()),
+) {
+  return Object.fromEntries(
+    Object.entries(tasksByDate)
+      .map(([dateKey, tasks]) => [
+        dateKey,
+        dateKey < todayKey ? tasks.filter((task) => !task.recurringRuleId) : tasks,
+      ])
+      .filter(([, tasks]) => tasks.length > 0),
+  )
+}
+
+export function pruneAppDataForStorage(data: AppData) {
+  return {
+    ...data,
+    tasksByDate: pruneExpiredRecurringTasks(data.tasksByDate),
   }
 }
 
