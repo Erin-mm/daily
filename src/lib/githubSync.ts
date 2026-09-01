@@ -1,7 +1,7 @@
 import type { AppData, DiarySyncData, GitHubSyncSettings } from '../types/electron'
 
 const SETTINGS_STORAGE_KEY = 'daily:github-sync'
-const GITHUB_WRITE_MAX_ATTEMPTS = 4
+const GITHUB_WRITE_MAX_ATTEMPTS = 6
 const GITHUB_WRITE_RETRY_DELAY_MS = 200
 const DEFAULT_SYNC_SETTINGS: GitHubSyncSettings = {
   enabled: false,
@@ -138,8 +138,17 @@ async function getGitHubErrorMessage(response: Response, action: string) {
 }
 
 async function readGitHubFile(settings: GitHubSyncSettings, filename: string) {
-  const response = await fetch(`${getApiUrl(settings, filename)}?ref=${encodeURIComponent(settings.branch)}`, {
-    headers: getHeaders(settings),
+  const query = new URLSearchParams({
+    ref: settings.branch,
+    _: crypto.randomUUID(),
+  })
+  const response = await fetch(`${getApiUrl(settings, filename)}?${query.toString()}`, {
+    cache: 'no-store',
+    headers: {
+      ...getHeaders(settings),
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
   })
 
   if (response.status === 404) {
@@ -185,15 +194,20 @@ async function writeGitHubFile(
       return
     }
 
-    if (response.status !== 409 || attempt === GITHUB_WRITE_MAX_ATTEMPTS - 1) {
+    if (response.status !== 409) {
       throw new Error(await getGitHubErrorMessage(response, `GitHub 写入 ${filename}`))
     }
 
-    const latestFile = await readGitHubFile(settings, filename)
-    currentSha = latestFile?.sha
+    if (attempt === GITHUB_WRITE_MAX_ATTEMPTS - 1) {
+      const message = await getGitHubErrorMessage(response, `GitHub 写入 ${filename}`)
+      throw new Error(`${message}。远端文件持续变化，请退出其他 Daily 实例后再试。`)
+    }
+
     await new Promise((resolve) => {
       window.setTimeout(resolve, GITHUB_WRITE_RETRY_DELAY_MS * 2 ** attempt)
     })
+    const latestFile = await readGitHubFile(settings, filename)
+    currentSha = latestFile?.sha
   }
 }
 

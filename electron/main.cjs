@@ -7,6 +7,7 @@ const appName = 'daily';
 const legacyAppName = 'neumorphic-todo';
 
 app.setName(appName);
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const userDataPath = app.getPath('userData');
@@ -570,22 +571,32 @@ ipcMain.handle('settings:autoLaunch:get', getAutoLaunchEnabled);
 ipcMain.handle('settings:autoLaunch:set', (_event, enabled) => setAutoLaunchEnabled(enabled));
 ipcMain.handle('dock:set-badge', (_event, count) => updateBadgeIndicators(count));
 
-app.whenReady().then(() => {
-  setDockIcon();
-  createTray();
-  startReminderScheduler();
-
-  createWindow(!app.getLoginItemSettings().wasOpenedAsHidden);
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (app.isReady()) {
+      showMainWindow();
     }
   });
-});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+  app.whenReady().then(() => {
+    setDockIcon();
+    createTray();
+    startReminderScheduler();
+
+    createWindow(!app.getLoginItemSettings().wasOpenedAsHidden);
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+}
