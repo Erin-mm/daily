@@ -35,9 +35,11 @@ import {
   normalizeAppData,
   pruneAppDataForStorage,
   pruneExpiredRecurringTasks,
+  rollOverIncompleteTasks,
 } from '../lib/tasks'
 import type {
   AppData,
+  DailyBackup,
   DiarySyncData,
   FeatureSettings,
   GitHubSyncSettings,
@@ -54,6 +56,17 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
+function prepareAppDataForToday(data: AppData, todayKey = toDateKey(new Date())): AppData {
+  return {
+    ...data,
+    tasksByDate: applyRecurringRulesForDate(
+      pruneExpiredRecurringTasks(rollOverIncompleteTasks(data.tasksByDate, todayKey), todayKey),
+      data.recurringRules,
+      todayKey,
+    ),
+  }
+}
+
 export type AppView = 'tasks' | 'calendar' | 'diary' | 'diaryList' | 'settings' | 'batch'
 
 export type DiaryListEntry = {
@@ -66,6 +79,25 @@ type NavigationSnapshot = {
   selectedDate: string
   calendarMonth: Date
   batchTaskId: string | null
+}
+
+type BackupStatus = {
+  state: 'idle' | 'success' | 'error'
+  message: string
+}
+
+function isDailyBackup(value: unknown): value is DailyBackup {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const backup = value as Partial<DailyBackup>
+  return (
+    backup.format === 'daily-backup' &&
+    backup.version === 1 &&
+    Boolean(backup.tasks) &&
+    Boolean(backup.diaries)
+  )
 }
 
 type TodoContextValue = {
@@ -89,6 +121,7 @@ type TodoContextValue = {
   featureSettings: FeatureSettings
   githubSyncSettings: GitHubSyncSettings
   githubSyncStatus: GitHubSyncStatus
+  backupStatus: BackupStatus
   setNewTask: (value: string) => void
   goToTasks: () => void
   goToCalendar: () => void
@@ -119,6 +152,8 @@ type TodoContextValue = {
     setting: keyof GitHubSyncSettings,
     value: string | boolean,
   ) => void
+  exportBackup: () => Promise<void>
+  importBackup: () => Promise<void>
   syncGitHubNow: () => Promise<void>
   hasBatchSchedule: (task: TodoTask) => boolean
 }
@@ -142,6 +177,10 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   const [githubSyncStatus, setGitHubSyncStatus] = useState<GitHubSyncStatus>({
     state: 'idle',
     message: '未开启同步',
+  })
+  const [backupStatus, setBackupStatus] = useState<BackupStatus>({
+    state: 'idle',
+    message: '可将全部任务和日记保存为本地备份',
   })
   const [githubSyncRetryTick, setGitHubSyncRetryTick] = useState(0)
   const [diarySyncData, setDiarySyncData] = useState<DiarySyncData>(() =>
@@ -241,6 +280,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
             const remoteData = await pullGitHubData(syncSettings)
 
             nextTasks = mergeAppData(nextTasks, remoteData.tasks)
+            nextTasks = prepareAppDataForToday(nextTasks)
             nextDiarySync = mergeDiarySyncData(nextDiarySync, remoteData.diaries)
 
             await Promise.all([
@@ -266,18 +306,14 @@ export function TodoProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        nextTasks = prepareAppDataForToday(nextTasks)
+
         if (isMounted) {
           setGitHubSyncSettings(syncSettings)
           setGitHubSyncStatus(nextSyncStatus)
           setRecurringRules(nextTasks.recurringRules)
           setFeatureSettings(nextTasks.featureSettings)
-          setTasksByDate(
-            applyRecurringRulesForDate(
-              pruneExpiredRecurringTasks(nextTasks.tasksByDate),
-              nextTasks.recurringRules,
-              toDateKey(new Date()),
-            ),
-          )
+          setTasksByDate(nextTasks.tasksByDate)
           setDiarySyncData(nextDiarySync)
           setDiaryError('')
 
@@ -334,17 +370,23 @@ export function TodoProvider({ children }: { children: ReactNode }) {
   }, [isLoaded, tasksByDate, todayKey])
 
   useEffect(() => {
-    if (!isLoaded || recurringRules.length === 0) {
+    if (!isLoaded) {
       return
     }
 
-    function syncTodayRecurringTasks() {
+    function syncTodayTasks() {
       const today = toDateKey(new Date())
-      setTasksByDate((current) => applyRecurringRulesForDate(current, recurringRules, today))
+      setTasksByDate((current) =>
+        applyRecurringRulesForDate(
+          rollOverIncompleteTasks(current, today),
+          recurringRules,
+          today,
+        ),
+      )
     }
 
-    syncTodayRecurringTasks()
-    const timer = window.setInterval(syncTodayRecurringTasks, RECURRING_SYNC_INTERVAL_MS)
+    syncTodayTasks()
+    const timer = window.setInterval(syncTodayTasks, RECURRING_SYNC_INTERVAL_MS)
 
     return () => {
       window.clearInterval(timer)
@@ -662,11 +704,18 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     (taskId: string) => {
       const now = new Date().toISOString()
       updateSelectedTasks((tasks) =>
-        tasks.map((task) => (task.id === taskId ? { ...task, deletedAt: now, updatedAt: now } : task)),
+        tasks.map((task) =>
+          task.id === taskId && task.completed
+            ? { ...task, deletedAt: now, updatedAt: now }
+            : task,
+        ),
       )
-      setRecurringRules((rules) => rules.filter((rule) => rule.taskId !== taskId))
+      const task = tasksByDate[selectedDate]?.find((item) => item.id === taskId)
+      if (task?.completed) {
+        setRecurringRules((rules) => rules.filter((rule) => rule.taskId !== taskId))
+      }
     },
-    [updateSelectedTasks],
+    [selectedDate, tasksByDate, updateSelectedTasks],
   )
 
   const updateBatchWeekdays = useCallback(
@@ -829,6 +878,83 @@ export function TodoProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const exportBackup = useCallback(async () => {
+    if (!window.todoStore?.exportBackup) {
+      setBackupStatus({ state: 'error', message: '当前环境不支持导出备份' })
+      return
+    }
+
+    try {
+      setBackupStatus({ state: 'idle', message: '正在准备备份…' })
+      const backup: DailyBackup = {
+        format: 'daily-backup',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        tasks: pruneAppDataForStorage({ tasksByDate, recurringRules, featureSettings }),
+        diaries: diarySyncData,
+      }
+      const result = await window.todoStore.exportBackup(backup)
+
+      setBackupStatus(
+        result.canceled
+          ? { state: 'idle', message: '已取消导出' }
+          : { state: 'success', message: '备份已导出' },
+      )
+    } catch (backupError) {
+      console.error(backupError)
+      setBackupStatus({
+        state: 'error',
+        message: `导出失败：${getErrorMessage(backupError)}`,
+      })
+    }
+  }, [diarySyncData, featureSettings, recurringRules, tasksByDate])
+
+  const importBackup = useCallback(async () => {
+    if (!window.todoStore?.importBackup) {
+      setBackupStatus({ state: 'error', message: '当前环境不支持导入备份' })
+      return
+    }
+
+    const confirmed = window.confirm('导入备份会覆盖当前本机的任务和日记，是否继续？')
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setBackupStatus({ state: 'idle', message: '正在读取备份…' })
+      const result = await window.todoStore.importBackup()
+      if (result.canceled) {
+        setBackupStatus({ state: 'idle', message: '已取消导入' })
+        return
+      }
+
+      if (!isDailyBackup(result.data)) {
+        throw new Error('这不是有效的 Daily 备份文件')
+      }
+
+      const importedPayload = prepareAppDataForToday(normalizeAppData(result.data.tasks))
+      const importedDiaries = normalizeDiarySyncData(result.data.diaries)
+
+      await Promise.all([saveTasks(importedPayload), saveDiaries(importedDiaries)])
+
+      skipDiarySaveRef.current = true
+      skipNextAutoSyncRef.current = true
+      setTasksByDate(importedPayload.tasksByDate)
+      setRecurringRules(importedPayload.recurringRules)
+      setFeatureSettings(importedPayload.featureSettings)
+      setDiarySyncData(importedDiaries)
+      setError('')
+      setDiaryError('')
+      setBackupStatus({ state: 'success', message: '备份已导入' })
+    } catch (backupError) {
+      console.error(backupError)
+      setBackupStatus({
+        state: 'error',
+        message: `导入失败：${getErrorMessage(backupError)}`,
+      })
+    }
+  }, [])
+
   const syncGitHubNow = useCallback(async () => {
     if (!hasGitHubSyncCredentials(githubSyncSettings)) {
       setGitHubSyncStatus({
@@ -861,15 +987,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
         remoteData.tasks,
       )
       const nextDiarySync = mergeDiarySyncData(diarySyncData, remoteData.diaries)
-      const syncedTasksByDate = applyRecurringRulesForDate(
-        nextTasks.tasksByDate,
-        nextTasks.recurringRules,
-        toDateKey(new Date()),
-      )
-      const syncedPayload: AppData = {
-        ...nextTasks,
-        tasksByDate: pruneExpiredRecurringTasks(syncedTasksByDate),
-      }
+      const syncedPayload = prepareAppDataForToday(nextTasks)
 
       skipNextAutoSyncRef.current = true
       setTasksByDate(syncedPayload.tasksByDate)
@@ -935,6 +1053,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       featureSettings,
       githubSyncSettings,
       githubSyncStatus,
+      backupStatus,
       setNewTask,
       goToTasks,
       goToCalendar,
@@ -962,6 +1081,8 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       handleAutoLaunchChange,
       handleFeatureSettingChange,
       handleGitHubSyncSettingChange,
+      exportBackup,
+      importBackup,
       syncGitHubNow,
       hasBatchSchedule: hasBatchScheduleForTask,
     }),
@@ -969,6 +1090,7 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       autoLaunchEnabled,
       batchRule,
       batchTask,
+      backupStatus,
       calendarMonth,
       completedCount,
       currentView,
@@ -987,6 +1109,8 @@ export function TodoProvider({ children }: { children: ReactNode }) {
       handleAutoLaunchChange,
       handleFeatureSettingChange,
       handleGitHubSyncSettingChange,
+      exportBackup,
+      importBackup,
       hasBatchScheduleForTask,
       headerTitle,
       githubSyncSettings,

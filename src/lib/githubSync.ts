@@ -1,6 +1,8 @@
 import type { AppData, DiarySyncData, GitHubSyncSettings } from '../types/electron'
 
 const SETTINGS_STORAGE_KEY = 'daily:github-sync'
+const GITHUB_WRITE_MAX_ATTEMPTS = 4
+const GITHUB_WRITE_RETRY_DELAY_MS = 200
 const DEFAULT_SYNC_SETTINGS: GitHubSyncSettings = {
   enabled: false,
   autoSyncEnabled: false,
@@ -162,23 +164,10 @@ async function writeGitHubFile(
   sha?: string,
 ) {
   const content = encodeBase64(value)
-  const response = await fetch(getApiUrl(settings, filename), {
-    method: 'PUT',
-    headers: {
-      ...getHeaders(settings),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message: `Sync Daily ${filename}`,
-      branch: settings.branch,
-      content,
-      ...(sha ? { sha } : {}),
-    }),
-  })
+  let currentSha = sha
 
-  if (response.status === 409) {
-    const latestFile = await readGitHubFile(settings, filename)
-    const retryResponse = await fetch(getApiUrl(settings, filename), {
+  for (let attempt = 0; attempt < GITHUB_WRITE_MAX_ATTEMPTS; attempt += 1) {
+    const response = await fetch(getApiUrl(settings, filename), {
       method: 'PUT',
       headers: {
         ...getHeaders(settings),
@@ -188,19 +177,23 @@ async function writeGitHubFile(
         message: `Sync Daily ${filename}`,
         branch: settings.branch,
         content,
-        ...(latestFile?.sha ? { sha: latestFile.sha } : {}),
+        ...(currentSha ? { sha: currentSha } : {}),
       }),
     })
 
-    if (!retryResponse.ok) {
-      throw new Error(await getGitHubErrorMessage(retryResponse, `GitHub 写入 ${filename}`))
+    if (response.ok) {
+      return
     }
 
-    return
-  }
+    if (response.status !== 409 || attempt === GITHUB_WRITE_MAX_ATTEMPTS - 1) {
+      throw new Error(await getGitHubErrorMessage(response, `GitHub 写入 ${filename}`))
+    }
 
-  if (!response.ok) {
-    throw new Error(await getGitHubErrorMessage(response, `GitHub 写入 ${filename}`))
+    const latestFile = await readGitHubFile(settings, filename)
+    currentSha = latestFile?.sha
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, GITHUB_WRITE_RETRY_DELAY_MS * 2 ** attempt)
+    })
   }
 }
 
@@ -225,13 +218,9 @@ export async function pushGitHubData(settings: GitHubSyncSettings, payload: GitH
     throw new Error('GitHub 同步设置不完整')
   }
 
-  const [tasksFile, diariesFile] = await Promise.all([
-    readGitHubFile(settings, 'tasks.json'),
-    readGitHubFile(settings, 'diaries.json'),
-  ])
+  const tasksFile = await readGitHubFile(settings, 'tasks.json')
+  await writeGitHubFile(settings, 'tasks.json', payload.tasks, tasksFile?.sha)
 
-  await Promise.all([
-    writeGitHubFile(settings, 'tasks.json', payload.tasks, tasksFile?.sha),
-    writeGitHubFile(settings, 'diaries.json', payload.diaries, diariesFile?.sha),
-  ])
+  const diariesFile = await readGitHubFile(settings, 'diaries.json')
+  await writeGitHubFile(settings, 'diaries.json', payload.diaries, diariesFile?.sha)
 }

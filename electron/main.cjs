@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, Notification } = require('electron');
+const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, Notification } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -247,6 +247,41 @@ async function writeDiaries(diariesByDate) {
   await fs.mkdir(path.dirname(diaryStorePath), { recursive: true });
   await fs.writeFile(diaryStorePath, JSON.stringify(normalized, null, 2), 'utf8');
   return normalized;
+}
+
+async function exportBackup(backup) {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: '导出 Daily 备份',
+    defaultPath: path.join(app.getPath('downloads'), `Daily-backup-${toDateKey(new Date())}.json`),
+    filters: [{ name: 'JSON 备份', extensions: ['json'] }],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { canceled: true };
+  }
+
+  await fs.writeFile(result.filePath, JSON.stringify(backup, null, 2), 'utf8');
+  return { canceled: false, filePath: result.filePath };
+}
+
+async function importBackup() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '导入 Daily 备份',
+    properties: ['openFile'],
+    filters: [{ name: 'JSON 备份', extensions: ['json'] }],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  const filePath = result.filePaths[0];
+  const content = await fs.readFile(filePath, 'utf8');
+  return {
+    canceled: false,
+    filePath,
+    data: JSON.parse(content),
+  };
 }
 
 function getAutoLaunchEnabled() {
@@ -529,6 +564,8 @@ ipcMain.handle('tasks:load', readTasks);
 ipcMain.handle('tasks:save', (_event, tasksByDate) => writeTasks(tasksByDate));
 ipcMain.handle('diary:load', readDiaries);
 ipcMain.handle('diary:save', (_event, diariesByDate) => writeDiaries(diariesByDate));
+ipcMain.handle('backup:export', (_event, backup) => exportBackup(backup));
+ipcMain.handle('backup:import', importBackup);
 ipcMain.handle('settings:autoLaunch:get', getAutoLaunchEnabled);
 ipcMain.handle('settings:autoLaunch:set', (_event, enabled) => setAutoLaunchEnabled(enabled));
 ipcMain.handle('dock:set-badge', (_event, count) => updateBadgeIndicators(count));

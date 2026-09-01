@@ -54,6 +54,20 @@ export type DiarySyncData = {
   deletedAtByDate: Record<string, string>
 }
 
+export type DailyBackup = {
+  format: 'daily-backup'
+  version: 1
+  exportedAt: string
+  tasks: AppData
+  diaries: DiarySyncData
+}
+
+export type BackupDialogResult = {
+  canceled: boolean
+  filePath?: string
+  data?: unknown
+}
+
 declare global {
   interface Window {
     todoStore?: {
@@ -61,6 +75,8 @@ declare global {
       saveTasks: (data: AppData) => Promise<AppData>
       loadDiaries: () => Promise<DiarySyncData>
       saveDiaries: (diariesByDate: DiarySyncData | DiariesByDate) => Promise<DiarySyncData>
+      exportBackup: (backup: DailyBackup) => Promise<BackupDialogResult>
+      importBackup: () => Promise<BackupDialogResult>
       getAutoLaunch: () => Promise<boolean>
       setAutoLaunch: (enabled: boolean) => Promise<boolean>
       setDockBadge: (count: number) => Promise<void>

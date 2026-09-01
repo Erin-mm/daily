@@ -58,6 +58,57 @@ export function pruneExpiredRecurringTasks(
   )
 }
 
+export function rollOverIncompleteTasks(
+  tasksByDate: TasksByDate,
+  todayKey = toDateKey(new Date()),
+) {
+  const pastDateKeys = Object.keys(tasksByDate)
+    .filter((dateKey) => dateKey < todayKey)
+    .sort()
+
+  if (pastDateKeys.length === 0) {
+    return tasksByDate
+  }
+
+  const nextTasksByDate: TasksByDate = { ...tasksByDate }
+  const todayTasks = [...(nextTasksByDate[todayKey] ?? [])]
+  const todayTaskIds = new Set(todayTasks.map((task) => task.id))
+  let changed = false
+
+  for (const dateKey of pastDateKeys) {
+    const dayTasks = nextTasksByDate[dateKey] ?? []
+    const remainingTasks: TodoTask[] = []
+
+    for (const task of dayTasks) {
+      const shouldRollOver = !task.completed && !task.deletedAt && !task.recurringRuleId
+
+      if (!shouldRollOver) {
+        remainingTasks.push(task)
+        continue
+      }
+
+      changed = true
+      if (!todayTaskIds.has(task.id)) {
+        todayTasks.push(task)
+        todayTaskIds.add(task.id)
+      }
+    }
+
+    if (remainingTasks.length > 0) {
+      nextTasksByDate[dateKey] = remainingTasks
+    } else {
+      delete nextTasksByDate[dateKey]
+    }
+  }
+
+  if (!changed) {
+    return tasksByDate
+  }
+
+  nextTasksByDate[todayKey] = todayTasks
+  return nextTasksByDate
+}
+
 export function pruneAppDataForStorage(data: AppData) {
   return {
     ...data,

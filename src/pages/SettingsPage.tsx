@@ -6,9 +6,12 @@ export function SettingsPage() {
     featureSettings,
     githubSyncSettings,
     githubSyncStatus,
+    backupStatus,
     handleAutoLaunchChange,
     handleFeatureSettingChange,
     handleGitHubSyncSettingChange,
+    exportBackup,
+    importBackup,
     syncGitHubNow,
     error,
   } = useTodo()
@@ -60,6 +63,24 @@ export function SettingsPage() {
           />
           <span />
         </label>
+      </section>
+
+      <section className="settings-backup-panel" aria-label="数据备份">
+        <div>
+          <strong>数据备份</strong>
+          <span>导出或恢复全部任务、重复规则、功能设置和日记</span>
+        </div>
+        <div className="settings-backup-actions">
+          <button type="button" onClick={() => void exportBackup()}>
+            导出备份
+          </button>
+          <button type="button" className="secondary" onClick={() => void importBackup()}>
+            导入备份
+          </button>
+        </div>
+        <p className={`settings-backup-status ${backupStatus.state}`}>
+          {backupStatus.message}
+        </p>
       </section>
 
       <section className="settings-sync-panel" aria-label="GitHub 同步">

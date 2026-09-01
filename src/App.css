@@ -222,6 +222,7 @@ input:focus-visible {
   font-size: 12px;
 }
 
+.settings-backup-panel,
 .settings-sync-panel {
   display: flex;
   flex-direction: column;
@@ -231,6 +232,51 @@ input:focus-visible {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface-muted);
+}
+
+.settings-backup-panel > div:first-child strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.settings-backup-panel > div:first-child span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.settings-backup-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-backup-actions button {
+  padding: 8px 11px;
+  border-radius: 10px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-backup-actions button.secondary {
+  color: var(--text-strong);
+}
+
+.settings-backup-status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.settings-backup-status.success {
+  color: var(--success);
+}
+
+.settings-backup-status.error {
+  color: #b75b5b;
 }
 
 .settings-sync-header,
