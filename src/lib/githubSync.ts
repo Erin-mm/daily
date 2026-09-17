@@ -1,4 +1,5 @@
 import type { AppData, DiarySyncData, GitHubSyncSettings } from '../types/electron'
+import { pruneAppDataForSync } from './tasks'
 
 const SETTINGS_STORAGE_KEY = 'daily:github-sync'
 const GITHUB_WRITE_MAX_ATTEMPTS = 6
@@ -233,7 +234,7 @@ export async function pushGitHubData(settings: GitHubSyncSettings, payload: GitH
   }
 
   const tasksFile = await readGitHubFile(settings, 'tasks.json')
-  await writeGitHubFile(settings, 'tasks.json', payload.tasks, tasksFile?.sha)
+  await writeGitHubFile(settings, 'tasks.json', pruneAppDataForSync(payload.tasks), tasksFile?.sha)
 
   const diariesFile = await readGitHubFile(settings, 'diaries.json')
   await writeGitHubFile(settings, 'diaries.json', payload.diaries, diariesFile?.sha)

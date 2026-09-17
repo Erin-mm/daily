@@ -109,10 +109,28 @@ export function rollOverIncompleteTasks(
   return nextTasksByDate
 }
 
-export function pruneAppDataForStorage(data: AppData) {
+export function pruneAppDataForStorage(data: AppData): AppData {
   return {
     ...data,
     tasksByDate: pruneExpiredRecurringTasks(data.tasksByDate),
+  }
+}
+
+/** Data written to GitHub intentionally excludes completed tasks. */
+export function pruneAppDataForSync(data: AppData): AppData {
+  const storageData = pruneAppDataForStorage(data)
+  const tasksByDate: TasksByDate = {}
+
+  for (const [dateKey, tasks] of Object.entries(storageData.tasksByDate)) {
+    const incompleteTasks = tasks.filter((task) => !task.completed)
+    if (incompleteTasks.length > 0) {
+      tasksByDate[dateKey] = incompleteTasks
+    }
+  }
+
+  return {
+    ...storageData,
+    tasksByDate,
   }
 }
 
